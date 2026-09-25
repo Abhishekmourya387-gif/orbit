@@ -1,14 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap');
-
 :root {
-  font-family: 'DM Sans', sans-serif;
+  font-family: Inter, Manrope, "Segoe UI", sans-serif;
+  color: #eef4ff;
+  background: #050b1f;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: #f7f8f4; }
+html { scroll-behavior: smooth; background: #050b1f; }
+body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; background: #050b1f; }
 button, input, textarea, select { font-family: inherit; }
 #root { min-height: 100vh; }

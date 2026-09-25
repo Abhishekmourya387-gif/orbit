@@ -137,6 +137,84 @@ export type InsightResponse = {
   recommendations: string[]
 }
 
+export type HabitResponse = {
+  id: number
+  user_id: number
+  title: string
+  description: string | null
+  frequency: string
+  streak: number
+  completed_today: boolean
+}
+
+export type GoalResponse = {
+  id: number
+  user_id: number
+  title: string
+  description: string | null
+  status: string
+  target_date: string | null
+  progress: number
+}
+
+export type StreakResponse = {
+  user_id: number
+  current_streak: number
+  longest_streak: number
+  last_activity: string | null
+  streak_status: string
+}
+
+export type ProfileResponse = {
+  id: number
+  user_id: number
+  bio: string | null
+  primary_goal: string | null
+  current_challenges: string[]
+  preferred_habits: string[]
+  focus_goals: string | null
+  improvement_goals: string | null
+  profile_completion: number
+}
+
+export type ProfileUpdate = {
+  bio?: string | null
+  primary_goal?: string | null
+  current_challenges?: string[]
+  preferred_habits?: string[]
+  focus_goals?: string | null
+  improvement_goals?: string | null
+}
+
+export type XpActivityResponse = {
+  id: number
+  user_id: number
+  source: string
+  xp_amount: number
+  description: string | null
+  created_at: string
+}
+
+export type XpSummaryResponse = {
+  user_id: number
+  total_xp: number
+  level: number
+  xp_to_next_level: number
+  progress_percentage: number
+  badges: string[]
+  recent_activities: XpActivityResponse[]
+}
+
+export type NotificationResponse = {
+  id: number
+  user_id: number
+  title: string
+  message: string
+  notification_type: string
+  is_read: boolean
+  created_at: string
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(options.headers || {})
 
@@ -275,4 +353,53 @@ export async function completeChallenge(token: string, challengeName: string) {
     method: 'POST',
     body: JSON.stringify({ challenge_name: challengeName }),
   }, token)
+}
+
+export async function getFocusHistory(token: string) {
+  return request<FocusSessionResponse[]>('/api/v1/focus/history', { method: 'GET' }, token)
+}
+
+export async function getHabits(token: string) {
+  return request<HabitResponse[]>('/api/v1/habits', { method: 'GET' }, token)
+}
+
+export async function createHabit(token: string, payload: { title: string; description?: string | null; frequency: string }) {
+  return request<HabitResponse>('/api/v1/habits', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token)
+}
+
+export async function getGoals(token: string) {
+  return request<GoalResponse[]>('/api/v1/goals', { method: 'GET' }, token)
+}
+
+export async function createGoal(token: string, payload: { title: string; description?: string | null; target_date?: string | null }) {
+  return request<GoalResponse>('/api/v1/goals', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }, token)
+}
+
+export async function getStreak(token: string) {
+  return request<StreakResponse>('/api/v1/streak', { method: 'GET' }, token)
+}
+
+export async function getProfile(token: string) {
+  return request<ProfileResponse>('/api/v1/profile', { method: 'GET' }, token)
+}
+
+export async function updateProfile(token: string, payload: ProfileUpdate) {
+  return request<ProfileResponse>('/api/v1/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }, token)
+}
+
+export async function getXpSummary(token: string) {
+  return request<XpSummaryResponse>('/api/v1/xp', { method: 'GET' }, token)
+}
+
+export async function getNotifications(token: string) {
+  return request<NotificationResponse[]>('/api/v1/notifications', { method: 'GET' }, token)
 }
