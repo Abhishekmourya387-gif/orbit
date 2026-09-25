@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { BackButton } from './BackButton'
 import {
@@ -55,22 +55,11 @@ export function RescueFlow({ token, onDashboard, onFocus, onCoach }: { token: st
   const [saving, setSaving] = useState(false)
   const [history, setHistory] = useState<RescueSessionResponse[]>([])
   const [error, setError] = useState('')
+  const savingRef = useRef(false)
 
   useEffect(() => {
     getRescueHistory(token).then(setHistory).catch(() => undefined)
   }, [token])
-
-  useEffect(() => {
-    if (view !== 'activity' || paused || !['breathing', 'movement', 'stretch'].includes(activity) || remaining <= 0) return
-    const timer = window.setInterval(() => setRemaining((current) => Math.max(0, current - 1)), 1000)
-    return () => window.clearInterval(timer)
-  }, [activity, paused, remaining, view])
-
-  useEffect(() => {
-    if (view === 'activity' && remaining === 0 && ['breathing', 'movement', 'stretch'].includes(activity)) {
-      void completeStep(activity as RescueActivityType, 30)
-    }
-  }, [activity, remaining, view])
 
   function startTrigger(nextTrigger: RescueTrigger) {
     const firstStep = flows[nextTrigger][0]
@@ -84,7 +73,7 @@ export function RescueFlow({ token, onDashboard, onFocus, onCoach }: { token: st
     setView(firstStep === 'physical' ? 'physical' : firstStep === 'grounding' ? 'grounding' : 'activity')
   }
 
-  function continueToNextStep() {
+  const continueToNextStep = useCallback(() => {
     if (!trigger) return
     const nextStep = flows[trigger][step + 1]
     if (!nextStep) {
@@ -99,10 +88,11 @@ export function RescueFlow({ token, onDashboard, onFocus, onCoach }: { token: st
     setGroundingNote('')
     setNotice('')
     setView(nextStep === 'physical' ? 'physical' : nextStep === 'grounding' ? 'grounding' : 'activity')
-  }
+  }, [step, trigger])
 
-  async function completeStep(activityType: RescueActivityType, durationSeconds: number) {
-    if (saving) return
+  const completeStep = useCallback(async (activityType: RescueActivityType, durationSeconds: number) => {
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     setError('')
     try {
@@ -123,9 +113,23 @@ export function RescueFlow({ token, onDashboard, onFocus, onCoach }: { token: st
     } catch (saveError) {
       setError((saveError as Error).message || 'We could not save this reset.')
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
-  }
+  }, [continueToNextStep, token, trigger])
+
+  useEffect(() => {
+    if (view !== 'activity' || paused || !['breathing', 'movement', 'stretch'].includes(activity) || remaining <= 0) return
+    const timer = window.setInterval(() => {
+      if (remaining === 1) {
+        void completeStep(activity as RescueActivityType, 30)
+        setRemaining(0)
+        return
+      }
+      setRemaining(remaining - 1)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [activity, completeStep, paused, remaining, view])
 
   function completePhysical() {
     const activityType: RescueActivityType = physicalChoice === 'pushups-5' || physicalChoice === 'pushups-10' ? 'pushups' : physicalChoice === 'stretch' ? 'stretch' : 'movement'

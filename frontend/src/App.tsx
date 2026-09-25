@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { BackButton } from './components/BackButton'
 import { ChallengeDetailPage, ChallengeListPage } from './components/ChallengePages'
@@ -8,7 +8,6 @@ import {
   clearSession,
   completeChallenge,
   createCheckIn,
-  createRescueSession,
   getChallenges,
   getDashboard,
   getFocusAnalytics,
@@ -27,39 +26,11 @@ import {
   type FocusAnalyticsResponse,
   type FocusSessionResponse,
   type LeaderboardSummaryResponse,
-  type RescueActivityType,
   type RescueSessionResponse,
   type SessionPayload,
 } from './lib/api'
 
 type AuthMode = 'login' | 'register'
-type Trigger = 'urge' | 'stress' | 'focus' | 'restless' | 'reset'
-type RescueView = 'start' | 'activity' | 'complete'
-
-const triggerOptions: Array<{ id: Trigger; label: string; detail: string }> = [
-  { id: 'urge', label: 'Strong urge', detail: 'I need a little distance from this feeling.' },
-  { id: 'stress', label: 'Feeling stressed', detail: 'My body needs a softer pace.' },
-  { id: 'focus', label: "Can't focus", detail: 'I want to find my next small step.' },
-  { id: 'restless', label: 'Feeling restless', detail: 'I need to move some energy through.' },
-  { id: 'reset', label: 'Just need a reset', detail: 'Nothing is wrong. I want a clean pause.' },
-]
-
-const recommendations: Record<Trigger, RescueActivityType[]> = {
-  urge: ['breathing', 'movement', 'grounding'],
-  stress: ['breathing', 'stretch', 'grounding'],
-  focus: ['movement', 'breathing', 'grounding'],
-  restless: ['movement', 'grounding', 'breathing'],
-  reset: ['breathing', 'stretch', 'cool_water'],
-}
-
-const activityMeta: Record<RescueActivityType, { label: string; eyebrow: string; description: string }> = {
-  breathing: { label: '30-second breathing', eyebrow: 'Slow the moment down', description: 'Follow the circle. There is nothing to solve while you breathe.' },
-  pushups: { label: 'A short physical reset', eyebrow: 'Change your state', description: 'Choose a small set and complete it at your own pace.' },
-  movement: { label: 'Quick movement', eyebrow: 'Let the energy move', description: 'Walk around, shake out your arms, or roll your shoulders for 30 seconds.' },
-  grounding: { label: '5–4–3 grounding', eyebrow: 'Come back to now', description: 'Notice what is around you, one sense at a time.' },
-  stretch: { label: 'Gentle stretch', eyebrow: 'Make some room', description: 'Try a beginner-friendly shoulder and neck stretch for 30 seconds.' },
-  cool_water: { label: 'Cool-water reset', eyebrow: 'A simple change of pace', description: 'Wash your face with cool water, then come back when you are ready.' },
-}
 
 function navigate(path: string) {
   window.history.pushState({}, '', path)
@@ -158,50 +129,6 @@ function Dashboard({ data, challenges, leaderboard, history, userName, onCheckIn
 
 function RescuePage({ token, onBack, onFocus, onCoach }: { token: string; onBack: () => void; onFocus: () => void; onCoach: () => void }) {
   return <RescueFlow token={token} onDashboard={onBack} onFocus={onFocus} onCoach={onCoach} />
-
-  /* Legacy implementation retained below until the next cleanup pass. */
-  const [view, setView] = useState<RescueView>('start')
-  const [trigger, setTrigger] = useState<Trigger | null>(null)
-  const [activity, setActivity] = useState<RescueActivityType>('breathing')
-  const [remaining, setRemaining] = useState(30)
-  const [paused, setPaused] = useState(false)
-  const [pushupCount, setPushupCount] = useState(5)
-  const [groundingStep, setGroundingStep] = useState(0)
-  const [groundingNote, setGroundingNote] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [history, setHistory] = useState<RescueSessionResponse[]>([])
-  const [error, setError] = useState('')
-
-  useEffect(() => { getRescueHistory(token).then(setHistory).catch(() => undefined) }, [token])
-  useEffect(() => {
-    if (view !== 'activity' || paused || !['breathing', 'movement', 'stretch'].includes(activity) || remaining <= 0) return
-    const timer = window.setInterval(() => setRemaining((current) => Math.max(0, current - 1)), 1000)
-    return () => window.clearInterval(timer)
-  }, [activity, paused, remaining, view])
-  useEffect(() => { if (view === 'activity' && remaining === 0 && ['breathing', 'movement', 'stretch'].includes(activity)) completeActivity(30) }, [activity, remaining, view])
-
-  async function completeActivity(durationSeconds: number) {
-    if (saving || view === 'complete') return
-    setSaving(true)
-    setError('')
-    try {
-      const saved = await createRescueSession(token, { activity_type: activity, duration_seconds: durationSeconds, completed: true })
-      setHistory((current) => [saved, ...current])
-      setView('complete')
-    } catch (saveError) { setError((saveError as Error).message || 'We could not save this reset.') } finally { setSaving(false) }
-  }
-
-  function chooseTrigger(nextTrigger: Trigger) { setTrigger(nextTrigger); setActivity(recommendations[nextTrigger][0]); setRemaining(30); setGroundingStep(0); setGroundingNote(''); setView('activity') }
-  function chooseAnother(nextActivity: RescueActivityType) { setActivity(nextActivity); setRemaining(30); setGroundingStep(0); setGroundingNote(''); setView('activity') }
-  const phaseElapsed = 30 - remaining
-  const breathPhase = phaseElapsed % 12 < 4 ? 'Breathe in' : phaseElapsed % 12 < 6 ? 'Hold' : 'Breathe out'
-  const groundingPrompts = ['Name 5 things you can see.', 'Name 4 things you can feel.', 'Name 3 things you can hear.']
-
-  return <main className="rescue-page"><header className="rescue-header"><button className="back-button" onClick={onBack}>← <span>Back to Orbit</span></button><Logo /><span className="rescue-label">Private reset</span></header><div className="rescue-stage">
-    {view === 'start' && <section className="rescue-start"><div className="rescue-intro"><span className="rescue-symbol">+</span><p className="kicker">No judgment. No pressure.</p><h1>Pause.<br />You don’t have to act on this feeling right now.</h1><p>Let’s get through the next 60 seconds together.</p><p className="rescue-history-note">{history.length > 0 ? `${history.length} private reset${history.length === 1 ? '' : 's'} completed` : 'This is a private space to reset.'}</p></div><div className="trigger-picker"><p className="kicker">What’s happening right now?</p>{triggerOptions.map((option) => <button className="trigger-option" key={option.id} onClick={() => chooseTrigger(option.id)}><span><strong>{option.label}</strong><small>{option.detail}</small></span><span>→</span></button>)}</div></section>}
-    {view === 'activity' && <section className="activity-view"><button className="back-button activity-back" onClick={() => setView('start')}>← Choose another feeling</button><div className="activity-content"><p className="kicker">{activityMeta[activity].eyebrow}</p><h1>{activityMeta[activity].label}</h1><p className="activity-description">{activityMeta[activity].description}</p>{activity === 'breathing' && <div className="breathing-workspace"><div className={`breathing-orb ${paused ? 'paused' : ''}`}><span>{remaining > 0 ? breathPhase : 'Complete'}</span></div><div className="timer-line"><span style={{ width: `${((30 - remaining) / 30) * 100}%` }} /></div><p className="timer-copy">{remaining > 0 ? `${remaining} seconds left` : 'Well done. Take a moment to notice.'}</p><div className="activity-actions">{remaining > 0 && <button className="button button-outline" onClick={() => setPaused((current) => !current)}>{paused ? 'Continue' : 'Pause'}</button>}{remaining > 0 && <button className="text-button" onClick={() => setRemaining(30)}>Restart</button>}</div></div>}{activity === 'pushups' && <div className="manual-workspace"><p className="big-instruction">Do a few push-ups at your own pace.</p><div className="choice-row">{[5, 10, 15].map((count) => <button key={count} className={pushupCount === count ? 'choice active' : 'choice'} onClick={() => setPushupCount(count)}>{count}</button>)}</div><button className="button button-primary" onClick={() => completeActivity(0)} disabled={saving}>I did {pushupCount} push-ups</button></div>}{activity === 'grounding' && <div className="manual-workspace"><div className="grounding-step"><span className="step-count">{groundingStep + 1} / 3</span><h2>{groundingPrompts[groundingStep]}</h2><input value={groundingNote} onChange={(event) => setGroundingNote(event.target.value)} placeholder="Write a word or two, if helpful" autoFocus /></div>{groundingStep < 2 ? <button className="button button-primary" disabled={!groundingNote.trim()} onClick={() => { setGroundingStep((current) => current + 1); setGroundingNote('') }}>Next sense <span>→</span></button> : <button className="button button-primary" disabled={!groundingNote.trim() || saving} onClick={() => completeActivity(0)}>Finish grounding</button>}</div>}{activity === 'cool_water' && <div className="manual-workspace"><p className="big-instruction">Wash your face with cool water, or hold a cool cloth for a moment.</p><button className="button button-primary" onClick={() => completeActivity(20)} disabled={saving}>I’m back</button></div>}{['movement', 'stretch'].includes(activity) && <div className="manual-workspace"><div className="movement-card"><span className="movement-figure">◡</span><p>{activity === 'movement' ? 'Walk around, shake out your arms, or roll your shoulders.' : 'Let your shoulders drop. Slowly turn your head left and right.'}</p></div><div className="timer-line"><span style={{ width: `${((30 - remaining) / 30) * 100}%` }} /></div><p className="timer-copy">{remaining} seconds left</p><button className="button button-outline" onClick={() => setPaused((current) => !current)}>{paused ? 'Continue' : 'Pause'}</button></div>}{error && <p className="form-error" role="alert">{error}</p>}</div></section>}
-    {view === 'complete' && <section className="rescue-complete"><span className="complete-mark">✓</span><p className="kicker">You made a little room</p><h1>Nice. Give yourself another 30 seconds.</h1><p>You noticed what was happening and chose your next moment. That matters.</p><div className="complete-actions"><button className="button button-primary" onClick={() => { if (trigger) chooseAnother(recommendations[trigger][1]) }}>Try another activity <span>→</span></button><button className="button button-outline" onClick={onBack}>Return to dashboard</button></div></section>}
-  </div></main>
 }
 
 function FocusPage({ token, onBack }: { token: string; onBack: () => void }) {
@@ -214,22 +141,11 @@ function FocusPage({ token, onBack }: { token: string; onBack: () => void }) {
   const [distractionSource, setDistractionSource] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const finishingRef = useRef(false)
 
   useEffect(() => {
     getFocusAnalytics(token).then(setAnalytics).catch(() => undefined)
   }, [token])
-
-  useEffect(() => {
-    if (!focusSession || focusSession.status === 'completed' || remaining <= 0) return
-    const timer = window.setInterval(() => setRemaining((current) => Math.max(0, current - 1)), 1000)
-    return () => window.clearInterval(timer)
-  }, [focusSession, remaining])
-
-  useEffect(() => {
-    if (focusSession?.status === 'active' && remaining === 0) {
-      void finishFocus()
-    }
-  }, [remaining, focusSession?.status])
 
   async function startFocus(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -250,8 +166,9 @@ function FocusPage({ token, onBack }: { token: string; onBack: () => void }) {
     }
   }
 
-  async function finishFocus() {
-    if (!focusSession || loading) return
+  const finishFocus = useCallback(async () => {
+    if (!focusSession || finishingRef.current) return
+    finishingRef.current = true
     setLoading(true)
     setError('')
     try {
@@ -261,9 +178,23 @@ function FocusPage({ token, onBack }: { token: string; onBack: () => void }) {
     } catch (completeError) {
       setError((completeError as Error).message || 'Unable to complete this focus block.')
     } finally {
+      finishingRef.current = false
       setLoading(false)
     }
-  }
+  }, [focusSession, notes, token])
+
+  useEffect(() => {
+    if (focusSession?.status !== 'active' || remaining <= 0) return
+    const timer = window.setInterval(() => {
+      if (remaining === 1) {
+        void finishFocus()
+        setRemaining(0)
+        return
+      }
+      setRemaining(remaining - 1)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [finishFocus, focusSession?.status, remaining])
 
   async function recordDistraction() {
     if (!focusSession || !distractionSource.trim()) return
@@ -304,7 +235,7 @@ function App() {
   const [leaderboard, setLeaderboard] = useState<LeaderboardSummaryResponse | null>(null)
   const [challenges, setChallenges] = useState<ChallengeSummaryResponse | null>(null)
   const [rescueHistory, setRescueHistory] = useState<RescueSessionResponse[]>([])
-  const [loadingDashboard, setLoadingDashboard] = useState(false)
+  const [loadingDashboard, setLoadingDashboard] = useState(() => readStoredSession() !== null)
   const [checkInOpen, setCheckInOpen] = useState(false)
   const [savingCheckIn, setSavingCheckIn] = useState(false)
   const [checkInError, setCheckInError] = useState('')
@@ -314,7 +245,6 @@ function App() {
   useEffect(() => {
     if (!session) return
     let mounted = true
-    setLoadingDashboard(true)
     Promise.all([getDashboard(session.access_token), getLeaderboard(session.access_token), getChallenges(session.access_token), getRescueHistory(session.access_token)])
       .then(([nextData, nextLeaderboard, nextChallenges, nextHistory]) => { if (!mounted) return; setData(nextData); setLeaderboard(nextLeaderboard); setChallenges(nextChallenges); setRescueHistory(nextHistory) })
       .catch((loadError) => mounted && setError((loadError as Error).message || 'Unable to load your Orbit.'))
@@ -322,10 +252,10 @@ function App() {
     return () => { mounted = false }
   }, [session])
 
-  async function handleAuth(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setLoading(true); setError(''); try { const nextSession = authMode === 'register' ? await registerUser(form.fullName, form.email, form.password) : await loginUser(form.email, form.password); saveSession(nextSession); setSession(nextSession) } catch (requestError) { setError((requestError as Error).message || 'Unable to complete authentication.') } finally { setLoading(false) } }
+  async function handleAuth(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); setLoading(true); setError(''); try { if (authMode === 'register') await registerUser(form.fullName, form.email, form.password); const nextSession = await loginUser(form.email, form.password); saveSession(nextSession); setLoadingDashboard(true); setSession(nextSession) } catch (requestError) { setError((requestError as Error).message || 'Unable to complete authentication.') } finally { setLoading(false) } }
   async function handleCheckIn(event: React.FormEvent<HTMLFormElement>) { event.preventDefault(); if (!session) return; const values = new FormData(event.currentTarget); setSavingCheckIn(true); setCheckInError(''); try { await createCheckIn(session.access_token, { mood: String(values.get('mood')), energy_level: Number(values.get('energyLevel')), focus_rating: Number(values.get('focusRating')), reflection: String(values.get('reflection') || '').trim(), win_of_day: String(values.get('winOfDay') || '').trim(), blockers: String(values.get('blockers') || '').split(',').map((item) => item.trim()).filter(Boolean) }); setData(await getDashboard(session.access_token)); setCheckInOpen(false) } catch (requestError) { setCheckInError((requestError as Error).message || 'Unable to save your check-in.') } finally { setSavingCheckIn(false) } }
   async function handleChallenge(name: string, action: 'join' | 'complete') { if (!session) return; try { if (action === 'join') await joinChallenge(session.access_token, name); else await completeChallenge(session.access_token, name); setChallenges(await getChallenges(session.access_token)) } catch (requestError) { setError((requestError as Error).message || 'Unable to update this challenge.') } }
-  function logout() { clearSession(); setSession(null); setData(null); navigate('/') }
+  function logout() { clearSession(); setSession(null); setData(null); setLoadingDashboard(false); navigate('/') }
 
   if (!session) return <AuthScreen mode={authMode} setMode={setAuthMode} loading={loading} error={error} form={form} setForm={setForm} onSubmit={handleAuth} />
   if (path === '/rescue') return <RescuePage token={session.access_token} onBack={() => navigate('/')} onFocus={() => navigate('/focus')} onCoach={() => navigate('/coach')} />
